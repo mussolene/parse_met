@@ -68,6 +68,7 @@ def get_pricelist(city, holdings, filter_name):
                     continue
 
                 length = row.contents[2].get_text()
+                length = length.replace(" ", "х")
                 steel = row.contents[4].get_text()
                 dop = row.contents[6].get_text()
                 gost = row.contents[8].get_text()
@@ -189,7 +190,7 @@ def compare_pricelist(files, path_csv, holdings):
 
         s = pa.pivot_table(
             df,
-            index=["product", "steel"],
+            index=["product", "steel", "length"],
             columns="hold",
             values="price2",
             aggfunc=np.max,
