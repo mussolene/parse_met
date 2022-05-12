@@ -6,9 +6,11 @@ import re
 import subprocess
 import sys
 
+import numpy as np
+import pandas as pa
+import regex
 import requests
 from bs4 import BeautifulSoup
-from yaml import parse
 
 
 def make_request(url, count=0):
@@ -82,10 +84,14 @@ def get_pricelist(city, holdings, filter_name):
 
 def get_qt_price(row):
     s = row.find("small")
-    qt = 0 if (s is None) else s.get_text()
+    qt = 0 if (s is None) else s.get_text().replace(" ", "")
 
     s = row.find("span")
-    price = 0 if (s is None) else s.get_text()
+    price = 0
+    if s is not None:
+        price = s.get_text().replace(" ", "")
+        price = regex.sub(r"[^0-9,]", "", price)
+        price = 0 if price == "" else float(price)
 
     return qt, price
 
@@ -106,11 +112,12 @@ def write_csv(city, path_csv, holdings, filter_name):
         + datetime.datetime.now().strftime("%Y-%m-%d %H.%M.%S")
         + ".csv"
     )
-    open(file_name, "w", encoding="utf-8").close()
+    open(file_name, "w", encoding="windows-1251").close()
 
-    with open(file_name, "w", encoding="utf-8") as ouf:
+    with open(file_name, "w", encoding="windows-1251") as ouf:
         writer = csv.writer(ouf, delimiter=";", lineterminator="\n")
         writer.writerows(data)
+    return file_name
 
 
 def cli():
@@ -147,13 +154,81 @@ def cli():
     return args.city, args.path, args.holdings, args.filter_name
 
 
+def compare_pricelist(files, path_csv, holdings):
+
+    dataset = []
+    names = [
+        "product",
+        "length",
+        "dop",
+        "steel",
+        "gost",
+        "qt1",
+        "price1",
+        "qt2",
+        "price2",
+        "hold",
+    ]
+    dtypes = {"price1": "float64", "price2": "float64"}
+
+    for city, file in files:
+
+        df = pa.read_csv(
+            file,
+            encoding="windows-1251",
+            skipinitialspace=True,
+            quotechar="'",
+            sep=";",
+            engine="python",
+            header=None,
+            names=names,
+            dtype=dtypes,
+        )
+
+        df["price2"] = np.where(df["price2"], df["price2"], df["price1"])
+
+        s = pa.pivot_table(
+            df,
+            index=["product", "steel"],
+            columns="hold",
+            values="price2",
+            aggfunc=np.max,
+            fill_value=0,
+        ).reindex(holdings, axis=1, fill_value=0)
+        dataset.append((city, s))
+
+    with pa.ExcelWriter(path_csv + "/data.xlsx", engine="xlsxwriter") as writer:
+        for city, s in dataset:
+            sheet_name = f"{city}_met100"
+            s.to_excel(writer, sheet_name=sheet_name)
+            workbook = writer.book
+            fmt = workbook.add_format().set_align("left")
+
+            writer.sheets[sheet_name].set_column(0, 0, 50)
+            writer.sheets[sheet_name].set_column("B:F", 20, fmt)
+
+
 if __name__ == "__main__":
 
     city_list, path_csv, holdings, filter = cli()
 
+    files = []
+
     print(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
     for city in city_list:
-        write_csv(city=city, path_csv=path_csv, holdings=holdings, filter_name=filter)
+        files.append(
+            (
+                city,
+                write_csv(
+                    city=city, path_csv=path_csv, holdings=holdings, filter_name=filter
+                ),
+            )
+        )
+
+    # files.append(("ekb", path_csv + "/met23_ekb_2022-05-12 12.12.32.csv"))
+    # files.append(("msk", path_csv + "/met23_msk_2022-05-12 12.13.52.csv"))
+
+    compare_pricelist(files, path_csv, holdings)
 
     print(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
