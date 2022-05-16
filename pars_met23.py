@@ -5,11 +5,15 @@ import os
 import re
 import subprocess
 import sys
+from ipaddress import collapse_addresses
+from mimetypes import suffix_map
+from sqlite3 import DataError
 
 import numpy as np
 import pandas as pa
 import regex
 import requests
+from black import check_stability_and_equivalence
 from bs4 import BeautifulSoup
 
 
@@ -34,6 +38,7 @@ def make_request(url, count=0):
 
 def get_pricelist(city, holdings, filter_name):
     d = []
+    now = datetime.datetime.now().strftime("%Y-%m-%d")
 
     if city == "msk":
         root_url = "http://23met.ru/plist/"
@@ -77,7 +82,14 @@ def get_pricelist(city, holdings, filter_name):
                 qt2, price2 = get_qt_price(row.contents[11])
 
                 d.append(
-                    [product, length, dop, steel, gost, qt1, price1, qt2, price2, hold]
+                    [
+                        now,
+                        product,
+                        length,
+                        steel,
+                        price2 if price2 else price1,
+                        hold,
+                    ]
                 )
 
     return d
@@ -97,10 +109,7 @@ def get_qt_price(row):
     return qt, price
 
 
-def write_csv(city, path_csv, holdings, filter_name):
-    data = get_pricelist(city, holdings, filter_name)
-    # Очищаем файл перед записью
-
+def get_file_name(city, path_csv):
     if city == "":
         city_path = ""
     else:
@@ -110,9 +119,36 @@ def write_csv(city, path_csv, holdings, filter_name):
         path_csv
         + "/met23_"
         + city_path
-        + datetime.datetime.now().strftime("%Y-%m-%d %H.%M.%S")
+        + datetime.datetime.now().strftime("%Y-%m-%d")
         + ".csv"
     )
+    return file_name
+
+
+def get_previous_file_name(city, path_csv):
+    if city == "":
+        city_path = ""
+    else:
+        city_path = city + "_"
+
+    now = datetime.datetime.now()
+
+    file_name = (
+        path_csv
+        + "/met23_"
+        + city_path
+        + (now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        + ".csv"
+    )
+    return file_name
+
+
+def write_csv(city, path_csv, holdings, filter_name):
+    data = get_pricelist(city, holdings, filter_name)
+    # Очищаем файл перед записью
+
+    file_name = get_file_name(city, path_csv)
+
     open(file_name, "w", encoding="windows-1251").close()
 
     with open(file_name, "w", encoding="windows-1251") as ouf:
@@ -155,81 +191,194 @@ def cli():
     return args.city, args.path, args.holdings, args.filter_name
 
 
-def compare_pricelist(files, path_csv, holdings):
+def pivot_table(df):
+
+    s = pa.pivot_table(
+        df,
+        index=["product", "steel", "length"],
+        columns=["date", "hold"],
+        values="price",
+        aggfunc=np.max,
+        fill_value=0,
+    )
+
+    return s
+
+
+def compare_pricelist(files, path_csv):
 
     dataset = []
     names = [
+        "date",
         "product",
         "length",
-        "dop",
         "steel",
-        "gost",
-        "qt1",
-        "price1",
-        "qt2",
-        "price2",
+        "price",
         "hold",
     ]
-    dtypes = {"price1": "float64", "price2": "float64"}
 
-    for city, file in files:
+    filter_name = ["Труба"]
+    filter_steel = ["ст3", "С255", "09Г2С", "ст20"]
+    filter_length = [
+        "80х80х4 ",
+        "80х80х4",
+        "80х80х5",
+        "80х80х5",
+        "80х80х6",
+        "80х80х6",
+        "100х100х3",
+        "100х100х4",
+        "100х100х4",
+        "100х100х5",
+        "100х100х5",
+        "100х100х6",
+        "100х100х6",
+        "120х120х4",
+        "120х120х4",
+        "120х120х5",
+        "120х120х5",
+        "120х120х6",
+        "120х120х6",
+        "140х140х4",
+        "140х140х5",
+        "140х140х5",
+        "140х140х6",
+        "140х140х6",
+        "140х140х7",
+        "140х140х7",
+        "140х140х8",
+        "140х140х8",
+        "160х160х4",
+        "160х160х5",
+        "160х160х5",
+        "160х160х6",
+        "160х160х6",
+        "160х160х7",
+        "160х160х7",
+        "160х160х8",
+        "160х160х8",
+        "180х180х4",
+        "180х180х5",
+        "180х180х5",
+        "180х180х6",
+        "180х180х6",
+        "180х180х7",
+        "180х180х7",
+        "180х180х8",
+        "180х180х8",
+        "160х80х5",
+        "160х80х5",
+        "160х80х6",
+        "160х80х6",
+        "160х120х4",
+        "160х120х5",
+        "160х120х5",
+        "160х120х6",
+        "160х120х6",
+        "180х140х5",
+        "180х140х5",
+        "180х140х6",
+        "180х140х6",
+        "200х100х6",
+        "200х100х6",
+        "200х160х5",
+        "200х160х5",
+        "200х160х6",
+        "200х160х6",
+        "200х200х5",
+        "200х200х6",
+        "200х200х6",
+        "200х200х7",
+        "200х200х7",
+        "200х200х8",
+        "200х200х8",
+        "146х7",
+        "146х8",
+        "146х8",
+        "159х4,5",
+        "159х5",
+        "159х5",
+        "159х6",
+        "159х6",
+        "159х7",
+        "159х7",
+        "159х8",
+        "159х8",
+        "168х6",
+        "168х8",
+        "168х8",
+        "168х9",
+        "168х9",
+        "168х10",
+        "219х5",
+        "219х5",
+        "219х6",
+        "219х6",
+        "219х7",
+        "219х7",
+        "219х8",
+        "219х8",
+        "219х9",
+        "219х9",
+        "219х10",
+        "219х10",
+    ]
 
-        df = pa.read_csv(
-            file,
-            encoding="windows-1251",
-            skipinitialspace=True,
-            quotechar="'",
-            sep=";",
-            engine="python",
-            header=None,
-            names=names,
-            dtype=dtypes,
-        )
+    dtypes = {"price": "float64"}
 
-        df["price2"] = np.where(df["price2"], df["price2"], df["price1"])
-
-        s = pa.pivot_table(
-            df,
-            index=["product", "steel", "length"],
-            columns="hold",
-            values="price2",
-            aggfunc=np.max,
-            fill_value=0,
-        ).reindex(holdings, axis=1, fill_value=0)
-        dataset.append((city, s))
+    for city, value in enumerate(files):
+        city_data = []
+        files_city = files[value]
+        for file in files_city:
+            df = pa.read_csv(
+                file,
+                encoding="windows-1251",
+                skipinitialspace=True,
+                quotechar="'",
+                sep=";",
+                engine="python",
+                header=None,
+                names=names,
+                dtype=dtypes,
+            )
+            df = df.where(df["steel"].isin(filter_steel))
+            df = df.where(df["length"].isin(filter_length))
+            city_data.append(df)
+        frame = pa.concat(city_data)
+        dataset.append((city, pivot_table(frame)))
 
     with pa.ExcelWriter(path_csv + "/data.xlsx", engine="xlsxwriter") as writer:
         for city, s in dataset:
             sheet_name = f"{city}_met100"
             s.to_excel(writer, sheet_name=sheet_name)
-            workbook = writer.book
-            fmt = workbook.add_format().set_align("left")
 
-            writer.sheets[sheet_name].set_column(0, 0, 50)
-            writer.sheets[sheet_name].set_column("B:F", 20, fmt)
+
+def main(debug=False):
+
+    city_list, path_csv, holdings, filter = cli()
+
+    print(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    if not debug:
+        for city in city_list:
+            write_csv(
+                city=city, path_csv=path_csv, holdings=holdings, filter_name=filter
+            )
+
+    files = {}
+    files_dir = os.listdir(path_csv)
+    for i in files_dir:
+        if i.startswith("met23_"):
+            key = i.split("_")[1]
+            if files.get(key) is None:
+                files[key] = []
+            files[key].append(path_csv + "/" + i)
+
+    compare_pricelist(files, path_csv, holdings, filter)
+
+    print(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
 if __name__ == "__main__":
 
-    city_list, path_csv, holdings, filter = cli()
-
-    files = []
-
-    print(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-
-    for city in city_list:
-        files.append(
-            (
-                city,
-                write_csv(
-                    city=city, path_csv=path_csv, holdings=holdings, filter_name=filter
-                ),
-            )
-        )
-
-    # files.append(("ekb", path_csv + "/met23_ekb_2022-05-12 12.12.32.csv"))
-    # files.append(("msk", path_csv + "/met23_msk_2022-05-12 12.13.52.csv"))
-
-    compare_pricelist(files, path_csv, holdings)
-
-    print(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    main(True)
