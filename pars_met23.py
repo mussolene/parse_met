@@ -5,15 +5,11 @@ import os
 import re
 import subprocess
 import sys
-from ipaddress import collapse_addresses
-from mimetypes import suffix_map
-from sqlite3 import DataError
 
 import numpy as np
 import pandas as pa
 import regex
 import requests
-from black import check_stability_and_equivalence
 from bs4 import BeautifulSoup
 
 
@@ -73,7 +69,11 @@ def get_pricelist(city, holdings, filter_name):
                     continue
 
                 length = row.contents[2].get_text()
-                length = length.strip().replace("  ", "х")
+                length = length.strip().replace("  ", "х").replace(".", ",")
+
+                if not filter_row(row, root_url):
+                    continue
+
                 steel = row.contents[4].get_text()
                 dop = row.contents[6].get_text()
                 gost = row.contents[8].get_text()
@@ -93,6 +93,46 @@ def get_pricelist(city, holdings, filter_name):
                 )
 
     return d
+
+
+def filter_row(row, root_url) -> bool:
+
+    res = False
+    length = row.contents[2].get_text()
+    length = length.strip().replace("  ", "х").replace(".", ",")
+
+    link = (
+        row.find_all("span")[0]
+        .attrs["data-link"]
+        .replace(root_url.replace("plist/", ""), "")
+        .split("/")[1]
+    )
+    sizes = re.findall("[0-9.]+", length)
+
+    if link == "tryba_es_kvadr" or link == "tryba_es_pr" or link == "tryba_es":
+
+        if len(sizes) == 3:
+            first_size = int(sizes[0])
+            third_size = int(sizes[2])
+        elif len(sizes) == 2:
+            first_size = int(sizes[0])
+            third_size = 0
+        else:
+            return False
+
+        if link == "tryba_es":
+            if first_size >= 57 and first_size <= 325:
+                res = True
+        else:
+            if (
+                first_size >= 40
+                and first_size <= 200
+                and third_size >= 2
+                and third_size <= 10
+            ):
+                res = True
+
+    return res
 
 
 def get_qt_price(row):
@@ -217,113 +257,6 @@ def compare_pricelist(files, path_csv):
         "hold",
     ]
 
-    filter_name = ["Труба"]
-    filter_steel = ["ст3", "С255", "09Г2С", "ст20"]
-    filter_length = [
-        "80х80х4 ",
-        "80х80х4",
-        "80х80х5",
-        "80х80х5",
-        "80х80х6",
-        "80х80х6",
-        "100х100х3",
-        "100х100х4",
-        "100х100х4",
-        "100х100х5",
-        "100х100х5",
-        "100х100х6",
-        "100х100х6",
-        "120х120х4",
-        "120х120х4",
-        "120х120х5",
-        "120х120х5",
-        "120х120х6",
-        "120х120х6",
-        "140х140х4",
-        "140х140х5",
-        "140х140х5",
-        "140х140х6",
-        "140х140х6",
-        "140х140х7",
-        "140х140х7",
-        "140х140х8",
-        "140х140х8",
-        "160х160х4",
-        "160х160х5",
-        "160х160х5",
-        "160х160х6",
-        "160х160х6",
-        "160х160х7",
-        "160х160х7",
-        "160х160х8",
-        "160х160х8",
-        "180х180х4",
-        "180х180х5",
-        "180х180х5",
-        "180х180х6",
-        "180х180х6",
-        "180х180х7",
-        "180х180х7",
-        "180х180х8",
-        "180х180х8",
-        "160х80х5",
-        "160х80х5",
-        "160х80х6",
-        "160х80х6",
-        "160х120х4",
-        "160х120х5",
-        "160х120х5",
-        "160х120х6",
-        "160х120х6",
-        "180х140х5",
-        "180х140х5",
-        "180х140х6",
-        "180х140х6",
-        "200х100х6",
-        "200х100х6",
-        "200х160х5",
-        "200х160х5",
-        "200х160х6",
-        "200х160х6",
-        "200х200х5",
-        "200х200х6",
-        "200х200х6",
-        "200х200х7",
-        "200х200х7",
-        "200х200х8",
-        "200х200х8",
-        "146х7",
-        "146х8",
-        "146х8",
-        "159х4,5",
-        "159х5",
-        "159х5",
-        "159х6",
-        "159х6",
-        "159х7",
-        "159х7",
-        "159х8",
-        "159х8",
-        "168х6",
-        "168х8",
-        "168х8",
-        "168х9",
-        "168х9",
-        "168х10",
-        "219х5",
-        "219х5",
-        "219х6",
-        "219х6",
-        "219х7",
-        "219х7",
-        "219х8",
-        "219х8",
-        "219х9",
-        "219х9",
-        "219х10",
-        "219х10",
-    ]
-
     dtypes = {"price": "float64"}
 
     for city, value in enumerate(files):
@@ -341,11 +274,9 @@ def compare_pricelist(files, path_csv):
                 names=names,
                 dtype=dtypes,
             )
-            df = df.where(df["steel"].isin(filter_steel))
-            df = df.where(df["length"].isin(filter_length))
             city_data.append(df)
         frame = pa.concat(city_data)
-        dataset.append((city, pivot_table(frame)))
+        dataset.append((value, pivot_table(frame)))
 
     with pa.ExcelWriter(path_csv + "/data.xlsx", engine="xlsxwriter") as writer:
         for city, s in dataset:
@@ -374,7 +305,7 @@ def main(debug=False):
                 files[key] = []
             files[key].append(path_csv + "/" + i)
 
-    compare_pricelist(files, path_csv, holdings, filter)
+    compare_pricelist(files, path_csv)
 
     print(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
