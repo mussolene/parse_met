@@ -7,10 +7,10 @@ import subprocess
 import sys
 
 import numpy as np
-import pandas as pa
 import regex
 import requests
 from bs4 import BeautifulSoup
+from pandas import DataFrame, ExcelWriter, concat, pivot_table, read_csv
 
 
 def make_request(url, count=0):
@@ -231,9 +231,9 @@ def cli():
     return args.city, args.path, args.holdings, args.filter_name
 
 
-def pivot_table(df):
+def _pivot_table(df):
 
-    s = pa.pivot_table(
+    s = pivot_table(
         df,
         index=["product", "steel", "length"],
         columns=["date", "hold"],
@@ -263,7 +263,7 @@ def compare_pricelist(files, path_csv):
         city_data = []
         files_city = files[value]
         for file in files_city:
-            df = pa.read_csv(
+            df = read_csv(
                 file,
                 encoding="windows-1251",
                 skipinitialspace=True,
@@ -275,10 +275,10 @@ def compare_pricelist(files, path_csv):
                 dtype=dtypes,
             )
             city_data.append(df)
-        frame = pa.concat(city_data)
-        dataset.append((value, pivot_table(frame)))
+        frame = concat(city_data)
+        dataset.append((value, _pivot_table(frame)))
 
-    with pa.ExcelWriter(path_csv + "/data.xlsx", engine="xlsxwriter") as writer:
+    with ExcelWriter(path_csv + "/data.xlsx", engine="xlsxwriter") as writer:
         for city, s in dataset:
             sheet_name = f"{city}_met100"
             s.to_excel(writer, sheet_name=sheet_name)
