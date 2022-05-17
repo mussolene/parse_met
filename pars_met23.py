@@ -312,4 +312,4 @@ def main(debug=False):
 
 if __name__ == "__main__":
 
-    main(True)
+    main()
