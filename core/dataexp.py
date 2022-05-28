@@ -94,5 +94,7 @@ def get_filled_frame(city_data, filters):
 
     frame = frame[frame["size_1"].isin(filters["width"].split(","))]
     frame = frame[frame["size_3"].isin(filters["thick"].split(","))]
+    frame = frame.loc[frame["product"].str.find("ТУ") == -1]
+    frame = frame.loc[frame["product"].str.find("неконд") == -1]
 
     return frame
