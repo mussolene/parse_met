@@ -15,5 +15,5 @@ def config_cli():
     args = parser.parse_args()
 
     config = configparser.ConfigParser()
-    config.read(args.config)
+    config.read(args.config, encoding="utf-8")
     return config

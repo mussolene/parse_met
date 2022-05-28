@@ -60,9 +60,21 @@ def main():
             files[key].append(path_csv + "/" + i)
 
     data = compare_pricelist(files=files, config=config)
+    columns_rename = {}
+    for key in config["NAMES"].keys():
+        columns_rename[key] = config["NAMES"].get(key)
 
     with ExcelWriter(path_csv + "/data.xlsx", engine="xlsxwriter") as writer:
         for city, s in data:
+
+            s.index.rename(columns_rename, inplace=True)
+            s.columns.rename(columns_rename, inplace=True)
+            s.rename(columns_rename, axis=1, level=0, inplace=True)
+            s.rename(columns_rename, axis=0, level=1, inplace=True)
+            s.rename(columns_rename, axis=1, level=1, inplace=True)
+            s.rename(columns_rename, axis=1, level=0, inplace=True)
+            s.rename(columns_rename, axis=0, level=0, inplace=True)
+
             if not s.empty:
                 sheet_name = f"{city}_met100"
                 s.to_excel(writer, sheet_name=sheet_name)
