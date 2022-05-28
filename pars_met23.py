@@ -10,7 +10,7 @@ import numpy as np
 import regex
 import requests
 from bs4 import BeautifulSoup
-from pandas import DataFrame, ExcelWriter, concat, pivot_table, read_csv
+from pandas import ExcelWriter, merge, pivot_table, read_csv
 
 
 def make_request(url, count=0):
@@ -32,7 +32,7 @@ def make_request(url, count=0):
     return r
 
 
-def get_pricelist(city, holdings, filter_name):
+def get_pricelist(city, holdings):
     d = []
     now = datetime.datetime.now().strftime("%Y-%m-%d")
 
@@ -62,31 +62,35 @@ def get_pricelist(city, holdings, filter_name):
                 if not row.contents:
                     continue
 
-                product = row.contents[0].get_text()
-                if filter_name and not any(
-                    f.lower() in product.lower() for f in filter_name
-                ):
-                    continue
-
-                length = row.contents[2].get_text()
-                length = length.strip().replace("  ", "х").replace(".", ",")
-
-                if not filter_row(row, root_url):
-                    continue
-
+                product = row.contents[0].get_text().strip()
+                length = (
+                    row.contents[2]
+                    .get_text()
+                    .strip()
+                    .replace("  ", "х")
+                    .replace(".", ",")
+                )
+                link = (
+                    row.find_all("span")[0]
+                    .attrs["data-link"]
+                    .replace(root_url.replace("plist/", ""), "")
+                    .split("/")[1]
+                )
+                sizes = re.findall("[0-9.]+", length)
                 steel = row.contents[4].get_text()
-                dop = row.contents[6].get_text()
-                gost = row.contents[8].get_text()
 
-                qt1, price1 = get_qt_price(row.contents[9])
-                qt2, price2 = get_qt_price(row.contents[11])
+                price1 = get_qt_price(row.contents[9])
+                price2 = get_qt_price(row.contents[11])
+
+                if not filter_row(link, sizes):
+                    continue
 
                 d.append(
                     [
                         now,
                         product,
                         length,
-                        steel,
+                        "Ст3" if not steel.strip() else steel.strip(),
                         price2 if price2 else price1,
                         hold,
                     ]
@@ -95,50 +99,41 @@ def get_pricelist(city, holdings, filter_name):
     return d
 
 
-def filter_row(row, root_url) -> bool:
+def filter_row(link, sizes) -> bool:
 
+    res_size = filter_size_prod(link, sizes)
+    if not res_size:
+        return False
+
+    return True
+
+
+def filter_size_prod(link, sizes):
     res = False
-    length = row.contents[2].get_text()
-    length = length.strip().replace("  ", "х").replace(".", ",")
+    if (
+        not (link == "tryba_es_kvadr" or link == "tryba_es_pr" or link == "tryba_es")
+        or len(sizes) < 2
+    ):
+        return False
 
-    link = (
-        row.find_all("span")[0]
-        .attrs["data-link"]
-        .replace(root_url.replace("plist/", ""), "")
-        .split("/")[1]
-    )
-    sizes = re.findall("[0-9.]+", length)
+    if len(sizes) == 2:
+        first_size = int(sizes[0])
+        third_size = 0
+    else:
+        first_size = int(sizes[0])
+        third_size = int(sizes[2])
 
-    if link == "tryba_es_kvadr" or link == "tryba_es_pr" or link == "tryba_es":
-
-        if len(sizes) == 3:
-            first_size = int(sizes[0])
-            third_size = int(sizes[2])
-        elif len(sizes) == 2:
-            first_size = int(sizes[0])
-            third_size = 0
-        else:
-            return False
-
-        if link == "tryba_es":
-            if first_size >= 57 and first_size <= 325:
-                res = True
-        else:
-            if (
-                first_size >= 40
-                and first_size <= 200
-                and third_size >= 2
-                and third_size <= 10
-            ):
-                res = True
+    if link == "tryba_es":
+        if 57 <= first_size <= 325:
+            res = True
+    else:
+        if 40 <= first_size <= 200 and 2 <= third_size <= 10:
+            res = True
 
     return res
 
 
 def get_qt_price(row):
-    s = row.find("small")
-    qt = 0 if (s is None) else s.get_text().replace(" ", "")
-
     s = row.find("span")
     price = 0
     if s is not None:
@@ -146,7 +141,7 @@ def get_qt_price(row):
         price = regex.sub(r"[^0-9,]", "", price)
         price = 0 if price == "" else float(price)
 
-    return qt, price
+    return price
 
 
 def get_file_name(city, path_csv):
@@ -165,26 +160,8 @@ def get_file_name(city, path_csv):
     return file_name
 
 
-def get_previous_file_name(city, path_csv):
-    if city == "":
-        city_path = ""
-    else:
-        city_path = city + "_"
-
-    now = datetime.datetime.now()
-
-    file_name = (
-        path_csv
-        + "/met23_"
-        + city_path
-        + (now - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-        + ".csv"
-    )
-    return file_name
-
-
 def write_csv(city, path_csv, holdings, filter_name):
-    data = get_pricelist(city, holdings, filter_name)
+    data = get_pricelist(city, holdings)
     # Очищаем файл перед записью
 
     file_name = get_file_name(city, path_csv)
@@ -203,8 +180,8 @@ def cli():
         "-c",
         "--city",
         type=lambda s: re.split("[ ,;]", s),
-        default=["ekb", "msk"],
-        help="список городов ekb, moskva, spb",
+        default=["ekb", "msk", "spb"],
+        help="список городов ekb, msk, spb",
     )
     parser.add_argument(
         "-p",
@@ -220,22 +197,16 @@ def cli():
         default=["agrupp", "mc", "ntpz", "ktzholding"],
         help="Список холдингов для парсинга agrupp, mc, ntpz, ktzholding",
     )
-    parser.add_argument(
-        "-fn",
-        "--filter_name",
-        type=lambda s: re.split("[ ,;]", s),
-        default=[],
-        help="Фильтр по названию можно задать списком через запятую Арматура, Труба и т.д.",
-    )
+
     args = parser.parse_args()
-    return args.city, args.path, args.holdings, args.filter_name
+    return args.city, args.path, args.holdings
 
 
 def _pivot_table(df):
 
     s = pivot_table(
         df,
-        index=["product", "steel", "length"],
+        index=["product", "length", "steel"],
         columns=["date", "hold"],
         values="price",
         aggfunc=np.max,
@@ -275,8 +246,32 @@ def compare_pricelist(files, path_csv):
                 dtype=dtypes,
             )
             city_data.append(df)
-        frame = concat(city_data)
-        dataset.append((value, _pivot_table(frame)))
+
+        frame = city_data[0]
+        for i in range(1, len(city_data)):
+
+            frame = frame.append(city_data[i])
+
+            df_diff_price = merge(
+                city_data[i],
+                city_data[i - 1],
+                on=["product", "length", "steel", "hold"],
+                how="outer",
+            )
+
+            df_diff_price = df_diff_price.fillna("0")
+            df_diff_price["date"] = (
+                df_diff_price["date_x"].max() + "_" + df_diff_price["date_y"].max()
+            )
+            df_diff_price["price"] = [
+                float(x.price_x if x.price_x != "0" else 0)
+                - float(x.price_y if x.price_y != "0" else 0)
+                for x in df_diff_price.itertuples()
+            ]
+
+            frame = frame.append(df_diff_price)
+
+        dataset.append((value, _pivot_table(frame.reindex(columns=names).fillna(0))))
 
     with ExcelWriter(path_csv + "/data.xlsx", engine="xlsxwriter") as writer:
         for city, s in dataset:
@@ -286,7 +281,7 @@ def compare_pricelist(files, path_csv):
 
 def main(debug=False):
 
-    city_list, path_csv, holdings, filter = cli()
+    city_list, path_csv, holdings = cli()
 
     print(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
