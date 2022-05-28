@@ -34,7 +34,7 @@ def compare_pricelist(files, config):
         "hold",
     ]
 
-    dtypes = {"price": "float64"}
+    dtypes = {"price": "float64", "size_1": "str", "size_2": "str", "size_3": "str"}
 
     for city, value in enumerate(files):
         city_data = []

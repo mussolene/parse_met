@@ -110,9 +110,9 @@ def get_root_url(city):
 
 def get_sizes_list(length):
     sizes = re.findall("[0-9.,]+", length)
-    ret = [0, 0, 0]
+    ret = ["0", "0", "0"]
     for i in range(len(sizes[:3])):
-        ret[i] = sizes[i]
+        ret[i] = sizes[i].replace(",", ".")
     return ret
 
 
