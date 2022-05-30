@@ -50,14 +50,7 @@ def main():
         for city in city_list:
             write_csv(city=city, path_csv=path_csv, holdings=holdings)
 
-    files = {}
-    files_dir = os.listdir(path_csv)
-    for i in files_dir:
-        if i.startswith("met23_"):
-            key = i.split("_")[1]
-            if files.get(key) is None:
-                files[key] = []
-            files[key].append(path_csv + "/" + i)
+    files = get_csv_files(path_csv)
 
     data = compare_pricelist(files=files, config=config)
     renames = {}
@@ -82,6 +75,18 @@ def main():
                 s.to_excel(writer, sheet_name=sheet_name)
 
     print(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+
+def get_csv_files(path_csv):
+    files = {}
+    files_dir = os.listdir(path_csv)
+    for i in files_dir:
+        if i.startswith("met23_"):
+            key = i.split("_")[1]
+            if files.get(key) is None:
+                files[key] = []
+            files[key].append(path_csv + "/" + i)
+    return files
 
 
 if __name__ == "__main__":

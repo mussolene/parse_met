@@ -19,6 +19,13 @@ def _pivot_table(df):
 def compare_pricelist(files, config):
     list_zavod = config["DEFAULT"]["list"].split(",")
     list_link = config["DEFAULT"]["link"].split(",")
+    merged_steel_conf = config["DEFAULT"]["merge_steel"]
+
+    merged_steel = []
+    for steel_merge in merged_steel_conf.split(","):
+        merged_steel.append(
+            {"NAME": steel_merge, "VALUE": config[steel_merge]["list_steel"].split(",")}
+        )
 
     dataset = []
     names = [
@@ -34,13 +41,24 @@ def compare_pricelist(files, config):
         "hold",
     ]
 
-    dtypes = {"price": "float64", "size_1": "str", "size_2": "str", "size_3": "str"}
+    dtypes = {
+        "price": "float64",
+        "size_1": "str",
+        "size_2": "str",
+        "size_3": "str",
+        "steel": "str",
+        "hold": "str",
+        "link": "str",
+        "product": "str",
+        "length": "str",
+        "date": "str",
+    }
 
     for city, value in enumerate(files):
         city_data = []
         files_city = files[value]
         for file in files_city:
-            df = get_dataframe(names, dtypes, file, list_link)
+            df = get_dataframe(names, dtypes, file, list_link, merged_steel)
             city_data.append(df)
         for i in list_zavod:
             key_list = value + "_" + i
@@ -52,7 +70,7 @@ def compare_pricelist(files, config):
     return dataset
 
 
-def get_dataframe(names, dtypes, file, list_link):
+def get_dataframe(names, dtypes, file, list_link, merged_steel):
     df = read_csv(
         file,
         encoding="windows-1251",
@@ -64,7 +82,22 @@ def get_dataframe(names, dtypes, file, list_link):
         names=names,
         dtype=dtypes,
     )
+
     df = df[df["link"].isin(list_link)]
+    if merged_steel:
+        for i in merged_steel:
+            df.loc[(df["steel"].isin(i["VALUE"])), "steel"] = i["NAME"]
+
+    df = df.groupby(
+        ["date", "product", "length", "steel", "hold", "size_1", "size_2", "size_3"]
+    )
+
+    df = df.agg({"price": np.max})
+    df = df.reset_index()
+    df = df.sort_values(
+        ["date", "product", "length", "steel", "hold", "size_1", "size_2", "size_3"]
+    )
+
     return df
 
 
@@ -76,7 +109,7 @@ def get_filled_frame(city_data, filters):
         df_diff_price = merge(
             city_data[i],
             city_data[i - 1],
-            on=["product", "length", "steel", "hold"],
+            on=["product", "length", "steel", "hold", "size_1", "size_2", "size_3"],
             how="outer",
         )
 
@@ -89,6 +122,8 @@ def get_filled_frame(city_data, filters):
             - float(x.price_y if x.price_y != "0" else 0)
             for x in df_diff_price.itertuples()
         ]
+        df_diff_price = df_diff_price.drop(["date_x", "date_y"], axis=1)
+        df_diff_price = df_diff_price.drop(["price_x", "price_y"], axis=1)
 
         frame = frame.append(df_diff_price)
 
