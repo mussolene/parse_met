@@ -43,6 +43,7 @@ def main():
     path_csv = config["DEFAULT"]["work_dir"]
     city_list = config["DEFAULT"]["city"].split(",")
     holdings = config["DEFAULT"]["holdings"].split(",")
+    path_xlsx = config["DEFAULT"]["data_dir"]
 
     print(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
@@ -57,7 +58,11 @@ def main():
     for key in config["NAMES"].keys():
         renames[key] = config["NAMES"].get(key)
 
-    with ExcelWriter(path_csv + "/data.xlsx", engine="xlsxwriter") as writer:
+    date_data = datetime.datetime.now().strftime("%Y-%m-%d")
+
+    with ExcelWriter(
+        path_xlsx + f"/data_{date_data}.xlsx", engine="xlsxwriter"
+    ) as writer:
         for city, s in data:
 
             s.index.rename(renames, inplace=True)
