@@ -62,10 +62,11 @@ def compare_pricelist(files, config):
             city_data.append(df)
         for i in list_zavod:
             key_list = value + "_" + i
-            frame = get_filled_frame(city_data, config[key_list])
-            dataset.append(
-                (key_list, _pivot_table(frame.reindex(columns=names).fillna(0)))
-            )
+            if config.has_section(key_list):
+                frame = get_filled_frame(city_data, config[key_list])
+                dataset.append(
+                    (key_list, _pivot_table(frame.reindex(columns=names).fillna(0)))
+                )
 
     return dataset
 
@@ -127,9 +128,21 @@ def get_filled_frame(city_data, filters):
 
         frame = frame.append(df_diff_price)
 
-    frame = frame[frame["size_1"].isin(filters["width"].split(","))]
-    frame = frame[frame["size_3"].isin(filters["thick"].split(","))]
-    frame = frame.loc[frame["product"].str.find("ТУ") == -1]
-    frame = frame.loc[frame["product"].str.find("неконд") == -1]
+    for i in range(1, 3):
+        size_filter = filters.get("size_" + str(i))
+        if size_filter:
+            frame = frame[frame["size_" + str(i)].isin(size_filter.split(","))]
+
+    filter_name = filters.get("filter_name")
+    if filter_name:
+        filter_name_list = filter_name.split(",")
+        for i in filter_name_list:
+            frame = frame.loc[frame["product"].str.find(i) != -1]
+
+    exclude_name = filters.get("exclude_name")
+    if exclude_name:
+        exclude_name_list = exclude_name.split(",")
+        for i in exclude_name_list:
+            frame = frame.loc[frame["product"].str.find(i) == -1]
 
     return frame
