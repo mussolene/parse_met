@@ -4,16 +4,24 @@ from pandas import ExcelWriter, merge, pivot_table, read_csv
 
 def _pivot_table(df):
 
-    s = pivot_table(
+    df_pivot = pivot_table(
         df,
-        index=["product", "length", "steel"],
+        index=["geometry", "length", "steel", "size_1", "size_2", "size_3"],
         columns=["date", "hold"],
         values="price",
         aggfunc=np.max,
         fill_value=0,
     )
 
-    return s
+    df_pivot.sort_values(
+        ["geometry", "size_1", "size_2", "size_3"], ascending=True, inplace=True
+    )
+    df_pivot = df_pivot.droplevel("geometry", axis=0)
+    df_pivot = df_pivot.droplevel("size_1", axis=0)
+    df_pivot = df_pivot.droplevel("size_2", axis=0)
+    df_pivot = df_pivot.droplevel("size_3", axis=0)
+
+    return df_pivot
 
 
 def compare_pricelist(files, config):
@@ -39,13 +47,14 @@ def compare_pricelist(files, config):
         "steel",
         "price",
         "hold",
+        "geometry",
     ]
 
     dtypes = {
         "price": "float64",
-        "size_1": "str",
-        "size_2": "str",
-        "size_3": "str",
+        "size_1": "float64",
+        "size_2": "float64",
+        "size_3": "float64",
         "steel": "str",
         "hold": "str",
         "link": "str",
@@ -93,11 +102,20 @@ def get_dataframe(names, dtypes, file, list_link, merged_steel):
         ["date", "product", "length", "steel", "hold", "size_1", "size_2", "size_3"]
     )
 
-    df = df.agg({"price": np.max})
+    df = df.agg({"price": np.min})
     df = df.reset_index()
     df = df.sort_values(
         ["date", "product", "length", "steel", "hold", "size_1", "size_2", "size_3"]
     )
+    df_copy = df.copy()
+    df["size_3"] = np.where(
+        df_copy["size_3"] == 0, df_copy["size_2"], df_copy["size_3"]
+    )
+    df["size_2"] = np.where(df_copy["size_3"] == 0, 0, df_copy["size_2"])
+
+    df["geometry"] = np.where(df["size_1"] == df["size_2"], 0, 99)
+    df["geometry"] = np.where(df["size_2"] == 0, 2, df["geometry"])
+    df["geometry"] = np.where(df["geometry"] == 99, 1, df["geometry"])
 
     return df
 
@@ -131,7 +149,8 @@ def get_filled_frame(city_data, filters):
     for i in range(1, 3):
         size_filter = filters.get("size_" + str(i))
         if size_filter:
-            frame = frame[frame["size_" + str(i)].isin(size_filter.split(","))]
+            float_size = [float(x) for x in size_filter.split(",")]
+            frame = frame[frame["size_" + str(i)].isin(float_size)]
 
     filter_name = filters.get("filter_name")
     if filter_name:
