@@ -1,5 +1,5 @@
 import numpy as np
-from pandas import ExcelWriter, merge, pivot_table, read_csv
+from pandas import ExcelWriter, concat, merge, pivot_table, read_csv
 
 
 def _pivot_table(df):
@@ -62,19 +62,26 @@ def compare_pricelist(files, config):
         "length": "str",
         "date": "str",
     }
-
-    for city, value in enumerate(files):
+    city_keys = files.keys()
+    for city in city_keys:
         city_data = []
-        files_city = files[value]
+        files_city = files[city]
         for file in files_city:
             df = get_dataframe(names, dtypes, file, list_link, merged_steel)
             city_data.append(df)
         for i in list_zavod:
-            key_list = value + "_" + i
-            if config.has_section(key_list):
+            key_list = city + "_" + i
+            if config.get(key_list):
                 frame = get_filled_frame(city_data, config[key_list])
                 dataset.append(
-                    (key_list, _pivot_table(frame.reindex(columns=names).fillna(0)))
+                    (
+                        key_list,
+                        _pivot_table(
+                            frame.reindex(
+                                columns=names,
+                            ).fillna(0),
+                        ),
+                    )
                 )
 
     return dataset
@@ -123,8 +130,6 @@ def get_dataframe(names, dtypes, file, list_link, merged_steel):
 def get_filled_frame(city_data, filters):
     frame = city_data[0]
     for i in range(1, len(city_data)):
-        frame = frame.append(city_data[i])
-
         df_diff_price = merge(
             city_data[i],
             city_data[i - 1],
@@ -143,25 +148,39 @@ def get_filled_frame(city_data, filters):
         ]
         df_diff_price = df_diff_price.drop(["date_x", "date_y"], axis=1)
         df_diff_price = df_diff_price.drop(["price_x", "price_y"], axis=1)
+        frame = concat([frame, city_data[i], df_diff_price])
 
-        frame = frame.append(df_diff_price)
+    frame = filter_frame(frame, filters)
 
-    for i in range(1, 3):
-        size_filter = filters.get("size_" + str(i))
-        if size_filter:
-            float_size = [float(x) for x in size_filter.split(",")]
-            frame = frame[frame["size_" + str(i)].isin(float_size)]
+    return frame
+
+
+def filter_frame(frame, filters):
+    filled_frame = frame.copy()
+    filled_frame.iloc[0:0]
+
+    filters_size = filters.get("filters")
+    for fs in filters_size:
+        frame_new = frame.copy()
+        for i in range(1, 4):
+            size_filter = fs.get("size_" + str(i))
+            if size_filter:
+                float_size = [float(x) for x in size_filter.split(",")]
+                frame_new = frame_new[frame_new["size_" + str(i)].isin(float_size)]
+        filled_frame = concat([filled_frame, frame_new])
+
+    filled_frame.drop_duplicates(inplace=True)
 
     filter_name = filters.get("filter_name")
     if filter_name:
         filter_name_list = filter_name.split(",")
         for i in filter_name_list:
-            frame = frame.loc[frame["product"].str.find(i) != -1]
+            filled_frame = filled_frame.loc[filled_frame["product"].str.find(i) != -1]
 
     exclude_name = filters.get("exclude_name")
     if exclude_name:
         exclude_name_list = exclude_name.split(",")
         for i in exclude_name_list:
-            frame = frame.loc[frame["product"].str.find(i) == -1]
+            filled_frame = filled_frame.loc[filled_frame["product"].str.find(i) == -1]
 
-    return frame
+    return filled_frame

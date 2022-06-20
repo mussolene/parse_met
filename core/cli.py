@@ -1,5 +1,5 @@
 import argparse
-import configparser
+import json
 import os
 
 
@@ -9,11 +9,10 @@ def config_cli():
         "-cfg",
         "--config",
         type=str,
-        default=os.getcwd() + "/config.ini",
+        default=os.getcwd() + "/config.json",
         help="Путь к файлу конфигурации",
     )
     args = parser.parse_args()
 
-    config = configparser.ConfigParser()
-    config.read(args.config, encoding="utf-8")
+    config = json.load(open(args.config, "r", encoding="utf-8"))
     return config

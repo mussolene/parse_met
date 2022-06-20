@@ -1,5 +1,6 @@
 import csv
 import datetime
+import json
 import os
 
 from core.cli import config_cli
@@ -94,6 +95,26 @@ def get_csv_files(path_csv):
     return files
 
 
-if __name__ == "__main__":
+def gen_config():
+    config = config_cli()
+    config_json = {}
+    config_json["DEFAULT"] = {}
+    for key in config["DEFAULT"].keys():
+        config_json["DEFAULT"][key] = config["DEFAULT"][key]
 
+    for section in config.sections():
+        config_json[section] = {}
+        for key in config[section]:
+            config_json[section][key] = config[section][key]
+
+    json.dump(
+        config_json,
+        open("config.json", "w", encoding="utf-8"),
+        indent=4,
+        ensure_ascii=False,
+    )
+
+
+if __name__ == "__main__":
+    # gen_config()
     main()
