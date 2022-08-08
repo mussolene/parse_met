@@ -64,11 +64,10 @@ def compare_pricelist(files, config):
     }
     city_keys = files.keys()
     for city in city_keys:
-        city_data = []
-        files_city = files[city]
-        for file in files_city:
-            df = get_dataframe(names, dtypes, file, list_link, merged_steel)
-            city_data.append(df)
+        city_data = [
+            get_dataframe(names, dtypes, file, list_link, merged_steel)
+            for file in files[city]
+        ]
         for i in list_zavod:
             key_list = city + "_" + i
             if config.get(key_list):
@@ -100,10 +99,14 @@ def get_dataframe(names, dtypes, file, list_link, merged_steel):
         dtype=dtypes,
     )
 
-    df = df[df["link"].isin(list_link)]
+    df = df.loc[df["link"].isin(list_link)]
+    merged_steel_list = []
     if merged_steel:
         for i in merged_steel:
             df.loc[(df["steel"].isin(i["VALUE"])), "steel"] = i["NAME"]
+            merged_steel_list.append(i["NAME"])
+
+    df = df.loc[df["steel"].isin(merged_steel_list)]
 
     df = df.groupby(
         ["date", "product", "length", "steel", "hold", "size_1", "size_2", "size_3"]
@@ -111,14 +114,11 @@ def get_dataframe(names, dtypes, file, list_link, merged_steel):
 
     df = df.agg({"price": np.min})
     df = df.reset_index()
-    df = df.sort_values(
-        ["date", "product", "length", "steel", "hold", "size_1", "size_2", "size_3"]
-    )
-    df_copy = df.copy()
-    df["size_3"] = np.where(
-        df_copy["size_3"] == 0, df_copy["size_2"], df_copy["size_3"]
-    )
-    df["size_2"] = np.where(df_copy["size_3"] == 0, 0, df_copy["size_2"])
+    size_3 = np.where(df["size_3"] == 0, df["size_2"], df["size_3"])
+    size_2 = np.where(df["size_3"] == 0, 0, df["size_2"])
+
+    df["size_3"] = size_3
+    df["size_2"] = size_2
 
     df["geometry"] = np.where(df["size_1"] == df["size_2"], 0, 99)
     df["geometry"] = np.where(df["size_2"] == 0, 2, df["geometry"])
@@ -128,12 +128,25 @@ def get_dataframe(names, dtypes, file, list_link, merged_steel):
 
 
 def get_filled_frame(city_data, filters):
-    frame = city_data[0]
+    dataframes = []
+    dataframes.append(filter_frame(city_data[0], filters))
     for i in range(1, len(city_data)):
+        frame1 = filter_frame(city_data[i], filters)
+        frame2 = filter_frame(city_data[i - 1], filters)
+
         df_diff_price = merge(
-            city_data[i],
-            city_data[i - 1],
-            on=["product", "length", "steel", "hold", "size_1", "size_2", "size_3"],
+            frame1,
+            frame2,
+            on=[
+                "product",
+                "length",
+                "steel",
+                "hold",
+                "size_1",
+                "size_2",
+                "size_3",
+                "geometry",
+            ],
             how="outer",
         )
 
@@ -148,28 +161,23 @@ def get_filled_frame(city_data, filters):
         ]
         df_diff_price = df_diff_price.drop(["date_x", "date_y"], axis=1)
         df_diff_price = df_diff_price.drop(["price_x", "price_y"], axis=1)
-        frame = concat([frame, city_data[i], df_diff_price])
 
-    frame = filter_frame(frame, filters)
+        dataframes.append(df_diff_price)
+        dataframes.append(frame2)
+        dataframes.append(frame1)
+
+    frame = concat(dataframes)
+
+    frame.drop_duplicates(inplace=True)
+    frame.reset_index(inplace=True)
+    frame.reindex(columns=frame.columns)
 
     return frame
 
 
 def filter_frame(frame, filters):
-    filled_frame = frame.copy()
-    filled_frame.iloc[0:0]
 
-    filters_size = filters.get("filters")
-    for fs in filters_size:
-        frame_new = frame.copy()
-        for i in range(1, 4):
-            size_filter = fs.get("size_" + str(i))
-            if size_filter:
-                float_size = [float(x) for x in size_filter.split(",")]
-                frame_new = frame_new[frame_new["size_" + str(i)].isin(float_size)]
-        filled_frame = concat([filled_frame, frame_new])
-
-    filled_frame.drop_duplicates(inplace=True)
+    filled_frame = filter_size(frame, filters)
 
     filter_name = filters.get("filter_name")
     if filter_name:
@@ -183,4 +191,25 @@ def filter_frame(frame, filters):
         for i in exclude_name_list:
             filled_frame = filled_frame.loc[filled_frame["product"].str.find(i) == -1]
 
+    return filled_frame
+
+
+def filter_size(frame, filters):
+    filled_frame = []
+
+    filters_size = filters.get("filters")
+    for fs in filters_size:
+        frame_size = frame.copy()
+        for i in range(1, 4):
+            size_filter = fs.get("size_" + str(i))
+            if size_filter:
+                float_size = [0 if not x else float(x) for x in size_filter.split(",")]
+                frame_size = frame_size.loc[
+                    frame_size["size_" + str(i)].isin(float_size)
+                ]
+        filled_frame.append(frame_size)
+
+    filled_frame = concat(filled_frame)
+
+    filled_frame.drop_duplicates(inplace=True)
     return filled_frame

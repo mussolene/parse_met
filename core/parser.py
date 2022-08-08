@@ -17,13 +17,14 @@ def make_request(url, count=0):
         sys.exit(f"Ошибка соединения {e}")
 
     if r.status_code == 404:
-        print(f"Страница {url} не найдена")
+        print(f"{url} : failed")
         return None
     if r.status_code == 429:
         print("Получено ошибку 429, пробуем пройти капчу")
         p = subprocess.Popen("chrome.exe", str(url))
         p.wait()
         return make_request(url, count + 1)
+    print(f"{url} : accepted")
     return r
 
 
@@ -32,18 +33,20 @@ def get_pricelist(city, holdings):
     now = datetime.datetime.now().strftime("%Y-%m-%d")
     root_url = get_root_url(city)
     for hold in holdings:
-        url_hold = get_url_hold(city, root_url, hold)
-        r = make_request(url_hold)
-        if r is None:
-            continue
+        urls_hold = get_url_hold(city, root_url, hold)
+        for url_hold in urls_hold:
 
-        table_prices = BeautifulSoup(normilize_html(r), "html.parser").find_all(
-            "table", {"class": "tablesorter"}
-        )
+            r = make_request(url_hold)
+            if r is None:
+                continue
 
-        for table in table_prices:
-            rows_prices = table.tbody.find_all("tr")
-            fill_result(d, now, root_url, hold, rows_prices)
+            table_prices = BeautifulSoup(normilize_html(r), "html.parser").find_all(
+                "table", {"class": "tablesorter"}
+            )
+
+            for table in table_prices:
+                rows_prices = table.tbody.find_all("tr")
+                fill_result(d, now, root_url, hold, rows_prices)
 
     return d
 
@@ -95,10 +98,14 @@ def normilize_html(r):
 
 
 def get_url_hold(city, root_url, hold):
+    urls_hold = []
     url_hold = root_url + hold
+    urls_hold.append(url_hold)
     if city != "" and city != "msk":
         url_hold = root_url + hold + city
-    return url_hold
+        urls_hold.append(url_hold)
+
+    return urls_hold
 
 
 def get_root_url(city):
