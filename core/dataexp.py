@@ -1,5 +1,5 @@
 import numpy as np
-from pandas import ExcelWriter, concat, merge, pivot_table, read_csv
+from pandas import DataFrame, ExcelWriter, concat, merge, pivot_table, read_csv, unique
 
 
 def _pivot_table(df):
@@ -28,6 +28,7 @@ def compare_pricelist(files, config):
     list_zavod = config["DEFAULT"]["list"].split(",")
     list_link = config["DEFAULT"]["link"].split(",")
     merged_steel_conf = config["DEFAULT"]["merge_steel"]
+    holdings = config["DEFAULT"]["holdings"].split(",")
 
     merged_steel = []
     for steel_merge in merged_steel_conf.split(","):
@@ -65,7 +66,7 @@ def compare_pricelist(files, config):
     city_keys = files.keys()
     for city in city_keys:
         city_data = [
-            get_dataframe(names, dtypes, file, list_link, merged_steel)
+            get_dataframe(names, dtypes, file, list_link, merged_steel, holdings)
             for file in files[city]
         ]
         for i in list_zavod:
@@ -86,7 +87,7 @@ def compare_pricelist(files, config):
     return dataset
 
 
-def get_dataframe(names, dtypes, file, list_link, merged_steel):
+def get_dataframe(names, dtypes, file, list_link, merged_steel, holdings):
     df = read_csv(
         file,
         encoding="windows-1251",
@@ -101,6 +102,7 @@ def get_dataframe(names, dtypes, file, list_link, merged_steel):
 
     df = df.loc[df["link"].isin(list_link)]
     merged_steel_list = []
+
     if merged_steel:
         for i in merged_steel:
             df.loc[(df["steel"].isin(i["VALUE"])), "steel"] = i["NAME"]
@@ -120,11 +122,61 @@ def get_dataframe(names, dtypes, file, list_link, merged_steel):
     df["size_3"] = size_3
     df["size_2"] = size_2
 
+    df = fill_steel_and_hold(df, holdings, merged_steel_list)
+
     df["geometry"] = np.where(df["size_1"] == df["size_2"], 0, 99)
     df["geometry"] = np.where(df["size_2"] == 0, 2, df["geometry"])
     df["geometry"] = np.where(df["geometry"] == 99, 1, df["geometry"])
 
     return df
+
+
+def fill_steel_and_hold(df, holdings, merged_steel_list):
+    data_filler = []
+    for zavod in holdings:
+        for steel in merged_steel_list:
+            for size in df.values:
+                data_filler.append(
+                    {
+                        "date": size[0],
+                        "product": size[1],
+                        "length": size[2],
+                        "steel": steel,
+                        "hold": zavod,
+                        "size_1": size[5],
+                        "size_2": size[6],
+                        "size_3": size[7],
+                        "price": 0,
+                    }
+                )
+
+    df_filler = DataFrame(
+        data_filler,
+        columns=[
+            "date",
+            "product",
+            "length",
+            "steel",
+            "hold",
+            "size_1",
+            "size_2",
+            "size_3",
+            "price",
+        ],
+    )
+    df_filler.drop_duplicates(inplace=True)
+    df_merge = merge(
+        df,
+        df_filler,
+        on=["date", "product", "length", "steel", "hold", "size_1", "size_2", "size_3"],
+        how="outer",
+    )
+    df_merge["price"] = np.where(
+        df_merge["price_x"] == 0, df_merge["price_y"], df_merge["price_x"]
+    )
+    df_merge.drop(columns=["price_x", "price_y"], inplace=True)
+    df_merge.drop_duplicates(inplace=True)
+    return df_merge
 
 
 def get_filled_frame(city_data, filters):
