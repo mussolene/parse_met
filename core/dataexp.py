@@ -92,7 +92,7 @@ def get_dataframe(names, dtypes, file, list_link, merged_steel, holdings):
         file,
         encoding="windows-1251",
         skipinitialspace=True,
-        quotechar="'",
+        quotechar='"',
         sep=";",
         engine="python",
         header=None,
