@@ -66,7 +66,7 @@ def get_value_from_html(root_url, row, hold, now):
         row.find_all("span")[0]
         .attrs["data-link"]
         .replace(root_url.replace("plist/", ""), "")
-        .split("/")[1]
+        .split("/")[-2]
     )
     sizes = get_sizes_list(length)
     steel = row.contents[4].get_text()
