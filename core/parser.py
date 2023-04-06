@@ -92,9 +92,9 @@ def get_value_from_html(root_url, row, hold, now):
 
 def normilize_html(r):
     # суки отсылают сломанный html
-    text = r.text.replace("<tbody>", "<tbody><tr>")
-    text = text.replace("</tr>", "</tr><tr>")
-    return text
+    # text = r.text.replace("<tbody>", "<tbody><tr>")
+    # text = text.replace("</tr>", "</tr><tr>")
+    return r.text
 
 
 def get_url_hold(city, root_url, hold):
