@@ -111,6 +111,8 @@ def get_url_hold(city, root_url, hold):
 def get_root_url(city):
     if city == "msk":
         return "http://23met.ru/plist/"
+    elif city == "chel":
+        return "http://chelyabinsk.23met.ru/plist/"
     else:
         return "http://" + city + ".23met.ru/plist/"
 
